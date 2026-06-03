@@ -1,0 +1,27 @@
+# =============================================================================
+# .github/workflows/dev.yml
+# -----------------------------------------------------------------------------
+# Pipeline de CI/CD para la rama DEV. Se dispara en cada push a 'dev'.
+#
+# Etapas (jobs) que tendra:
+#   1. test:
+#        - checkout del codigo
+#        - instalar dependencias (requirements.txt)
+#        - descargar modelo .onnx + datos de prueba desde Blob (scripts/download_from_blob.py)
+#        - correr pruebas unitarias (pytest tests/) -> las 2 pruebas obligatorias
+#   2. build-promote (depende de que 'test' pase):
+#        - login a GitHub Container Registry (ghcr.io) con GITHUB_TOKEN
+#        - construir la imagen Docker (descarga el modelo en el build)
+#        - push de la imagen a ghcr.io con tag :dev
+#        - desplegar/actualizar el Container App de DEV apuntando a la nueva imagen
+#
+# Trigger:
+#   on:
+#     push:
+#       branches: [ dev ]
+#
+# Los secretos (credenciales Azure, connection string) se leen de
+# GitHub Secrets, NUNCA van escritos en este archivo.
+# =============================================================================
+
+# TODO: implementar en el siguiente paso del proyecto.

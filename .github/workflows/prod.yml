@@ -1,0 +1,20 @@
+# =============================================================================
+# .github/workflows/prod.yml
+# -----------------------------------------------------------------------------
+# Pipeline de CI/CD para la rama PROD. Se dispara en cada push a 'prod'.
+#
+# Misma estructura que dev.yml (test + build-promote), pero:
+#   - la imagen se etiqueta :prod
+#   - despliega al Container App de PRODUCCION (endpoint distinto al de dev)
+#   - ENVIRONMENT=prod  -> las predicciones se escriben en predicciones_prod.txt
+#
+# El umbral de la metrica en la etapa test puede ser MAS estricto que en dev,
+# para que un modelo mediocre no llegue a produccion (quality gate mas duro).
+#
+# Trigger:
+#   on:
+#     push:
+#       branches: [ prod ]
+# =============================================================================
+
+# TODO: implementar en el siguiente paso del proyecto.

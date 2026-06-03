@@ -1,0 +1,18 @@
+# =============================================================================
+# requirements.txt
+# -----------------------------------------------------------------------------
+# Dependencias de Python del proyecto. Se fijaran versiones exactas en el
+# siguiente paso (pinning) para que el build sea reproducible.
+#
+# Previstas:
+#   fastapi              -> framework de la API
+#   uvicorn[standard]    -> servidor ASGI para correr FastAPI
+#   onnxruntime          -> motor de inferencia para el modelo .onnx
+#   numpy                -> manejo de tensores / preprocesamiento
+#   pillow               -> leer y redimensionar imagenes a 28x28
+#   azure-storage-blob   -> descargar modelo/datos y escribir predicciones
+#   python-multipart     -> recibir imagenes via POST en FastAPI
+#   pytest               -> correr las pruebas unitarias
+# =============================================================================
+
+# TODO: fijar versiones en el siguiente paso del proyecto.

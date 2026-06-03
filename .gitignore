@@ -1,0 +1,30 @@
+# =============================================================================
+# .gitignore
+# -----------------------------------------------------------------------------
+# CRITICO para este proyecto: el enunciado prohibe que el .onnx exista en el
+# repo. Este archivo garantiza que nunca se suba por accidente, junto con
+# secretos y artefactos temporales.
+# =============================================================================
+
+# Modelos y datos descargados (NO deben ir al repo)
+*.onnx
+artifacts/
+data/
+models/
+
+# Secretos y variables de entorno locales
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# Sistema operativo / editores
+.DS_Store
+.idea/
+.vscode/
