@@ -28,3 +28,5 @@ venv/
 .DS_Store
 .idea/
 .vscode/
+*.npz
+mnist_test_subset.npz
