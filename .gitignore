@@ -30,3 +30,4 @@ venv/
 .vscode/
 *.npz
 mnist_test_subset.npz
+test-download/
