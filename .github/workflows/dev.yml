@@ -1,27 +1,176 @@
 # =============================================================================
 # .github/workflows/dev.yml
 # -----------------------------------------------------------------------------
-# Pipeline de CI/CD para la rama DEV. Se dispara en cada push a 'dev'.
+# Pipeline de CI/CD para la rama DEV.
+# Se dispara automáticamente con cada push a la rama 'dev'.
 #
-# Etapas (jobs) que tendra:
-#   1. test:
-#        - checkout del codigo
-#        - instalar dependencias (requirements.txt)
-#        - descargar modelo .onnx + datos de prueba desde Blob (scripts/download_from_blob.py)
-#        - correr pruebas unitarias (pytest tests/) -> las 2 pruebas obligatorias
-#   2. build-promote (depende de que 'test' pase):
-#        - login a GitHub Container Registry (ghcr.io) con GITHUB_TOKEN
-#        - construir la imagen Docker (descarga el modelo en el build)
-#        - push de la imagen a ghcr.io con tag :dev
-#        - desplegar/actualizar el Container App de DEV apuntando a la nueva imagen
+# Etapas:
+#   1. test            -> descarga modelo+datos, corre pytest (quality gate accuracy>=0.90)
+#   2. build-and-deploy -> construye imagen Docker, la sube a ghcr.io,
+#                         actualiza el Container App 'mnist-api-dev'.
 #
-# Trigger:
-#   on:
-#     push:
-#       branches: [ dev ]
-#
-# Los secretos (credenciales Azure, connection string) se leen de
-# GitHub Secrets, NUNCA van escritos en este archivo.
+# La segunda etapa SOLO se ejecuta si la primera pasa (needs: test).
+# Si los tests fallan, NADA se despliega -> el modelo malo queda contenido.
 # =============================================================================
 
-# TODO: implementar en el siguiente paso del proyecto.
+name: dev - test, build & deploy
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:   # permite también disparar manualmente desde la UI
+
+# Solo un pipeline corriendo a la vez por rama. Si llega un segundo push
+# mientras el primero corre, cancela el primero (más útil que encolar).
+concurrency:
+  group: dev-pipeline
+  cancel-in-progress: true
+
+# Permisos explícitos: principio de menor privilegio.
+# - contents: read       -> para hacer checkout del repo
+# - packages: write      -> para empujar la imagen a ghcr.io
+# - id-token: write      -> reservado por azure/login (no usamos OIDC pero
+#                            es buena práctica declararlo)
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+env:
+  # Variables compartidas entre jobs (centralizadas para no repetir)
+  ENVIRONMENT_NAME: dev
+  CONTAINER_APP_NAME: mnist-api-dev
+  ACCURACY_THRESHOLD: "0.90"   # umbral dev (más permisivo que prod=0.95)
+  IMAGE_NAME: ghcr.io/${{ github.repository }}   # ghcr.io/realpe/jlrealpe-mlops-mnist
+
+jobs:
+
+  # ===========================================================================
+  # JOB 1 - TEST
+  # ===========================================================================
+  test:
+    name: Run tests (quality gate)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip   # cachea ~/.cache/pip entre runs para velocidad
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Descargar modelo y datos desde Azure Blob
+        env:
+          AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
+        run: |
+          python scripts/download_from_blob.py --dest .
+
+      - name: Ejecutar pruebas unitarias (con quality gate)
+        env:
+          MODEL_PATH: mnist-12.onnx
+          TEST_DATA_PATH: mnist_test_subset.npz
+          ACCURACY_THRESHOLD: ${{ env.ACCURACY_THRESHOLD }}
+        run: |
+          pytest tests/ -v
+
+  # ===========================================================================
+  # JOB 2 - BUILD & DEPLOY
+  # ===========================================================================
+  build-and-deploy:
+    name: Build image and deploy to Container App
+    runs-on: ubuntu-latest
+    needs: test   # bloqueante: si test falla, este job NO se ejecuta
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      # --- Build de la imagen Docker -------------------------------------
+      # Login a ghcr.io con el token automático del workflow.
+      # github.actor = usuario que disparó el run (en este caso: 'realpe').
+      - name: Login a GitHub Container Registry (ghcr.io)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Etiquetas de la imagen:
+      #   - :dev               -> tag rolling, siempre apunta al último deploy
+      #   - :dev-<SHA-corto>   -> tag inmutable, trazabilidad por commit
+      - name: Calcular tags de la imagen
+        id: tags
+        run: |
+          SHA_SHORT=$(git rev-parse --short HEAD)
+          echo "rolling=${{ env.IMAGE_NAME }}:${{ env.ENVIRONMENT_NAME }}" >> $GITHUB_OUTPUT
+          echo "sha=${{ env.IMAGE_NAME }}:${{ env.ENVIRONMENT_NAME }}-${SHA_SHORT}" >> $GITHUB_OUTPUT
+
+      - name: Build y push de la imagen
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.tags.outputs.rolling }}
+            ${{ steps.tags.outputs.sha }}
+          build-args: |
+            AZURE_STORAGE_CONNECTION_STRING=${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
+          # Cache de layers entre runs (acelera mucho los rebuilds)
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # --- Deploy a Azure Container Apps ---------------------------------
+      - name: Login a Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # Antes del primer deploy, Container Apps no sabe cómo autenticarse
+      # contra ghcr.io para pulear imágenes privadas. Configuramos el secret
+      # del registry idempotentemente (no falla si ya existe).
+      - name: Configurar credencial de ghcr.io en Container App
+        run: |
+          az containerapp registry set \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --server ghcr.io \
+            --username ${{ github.actor }} \
+            --password ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Actualizar Container App con la nueva imagen
+        run: |
+          az containerapp update \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --image ${{ steps.tags.outputs.sha }} \
+            --set-env-vars \
+              ENVIRONMENT=${{ env.ENVIRONMENT_NAME }} \
+              AZURE_STORAGE_CONNECTION_STRING="secretref:storage-conn-str"
+
+      # Guardar la connection string del Storage como SECRET dentro del
+      # Container App (no como variable en texto plano). El --set-env-vars
+      # de arriba lo referencia con 'secretref:'.
+      - name: Asegurar secret de Storage en el Container App
+        run: |
+          az containerapp secret set \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --secrets storage-conn-str="${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}"
+
+      - name: Mostrar URL del endpoint desplegado
+        run: |
+          FQDN=$(az containerapp show \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          echo "Endpoint desplegado: https://${FQDN}"
+          echo "Health check: https://${FQDN}/health"
+          echo "Documentación API: https://${FQDN}/docs"

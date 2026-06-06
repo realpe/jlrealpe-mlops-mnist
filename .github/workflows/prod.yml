@@ -1,20 +1,146 @@
 # =============================================================================
 # .github/workflows/prod.yml
 # -----------------------------------------------------------------------------
-# Pipeline de CI/CD para la rama PROD. Se dispara en cada push a 'prod'.
+# Pipeline de CI/CD para la rama PROD.
+# Idéntico a dev.yml en estructura, con tres diferencias:
+#   - Se dispara con push a 'prod' (no 'dev').
+#   - Despliega al Container App 'mnist-api-prod'.
+#   - Quality gate más estricto: ACCURACY_THRESHOLD=0.95 (en dev es 0.90).
 #
-# Misma estructura que dev.yml (test + build-promote), pero:
-#   - la imagen se etiqueta :prod
-#   - despliega al Container App de PRODUCCION (endpoint distinto al de dev)
-#   - ENVIRONMENT=prod  -> las predicciones se escriben en predicciones_prod.txt
-#
-# El umbral de la metrica en la etapa test puede ser MAS estricto que en dev,
-# para que un modelo mediocre no llegue a produccion (quality gate mas duro).
-#
-# Trigger:
-#   on:
-#     push:
-#       branches: [ prod ]
+# El umbral más alto significa: un modelo que apenas pasa en dev (90-94%)
+# NO se desplegará en prod. Eso es el promotion gate de MLOps.
 # =============================================================================
 
-# TODO: implementar en el siguiente paso del proyecto.
+name: prod - test, build & deploy
+
+on:
+  push:
+    branches: [prod]
+  workflow_dispatch:
+
+concurrency:
+  group: prod-pipeline
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+env:
+  ENVIRONMENT_NAME: prod
+  CONTAINER_APP_NAME: mnist-api-prod
+  ACCURACY_THRESHOLD: "0.95"   # más estricto que dev (0.90)
+  IMAGE_NAME: ghcr.io/${{ github.repository }}
+
+jobs:
+
+  test:
+    name: Run tests (strict quality gate)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Descargar modelo y datos desde Azure Blob
+        env:
+          AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
+        run: |
+          python scripts/download_from_blob.py --dest .
+
+      - name: Ejecutar pruebas unitarias (con quality gate estricto)
+        env:
+          MODEL_PATH: mnist-12.onnx
+          TEST_DATA_PATH: mnist_test_subset.npz
+          ACCURACY_THRESHOLD: ${{ env.ACCURACY_THRESHOLD }}
+        run: |
+          pytest tests/ -v
+
+  build-and-deploy:
+    name: Build image and deploy to Container App
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Login a GitHub Container Registry (ghcr.io)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Calcular tags de la imagen
+        id: tags
+        run: |
+          SHA_SHORT=$(git rev-parse --short HEAD)
+          echo "rolling=${{ env.IMAGE_NAME }}:${{ env.ENVIRONMENT_NAME }}" >> $GITHUB_OUTPUT
+          echo "sha=${{ env.IMAGE_NAME }}:${{ env.ENVIRONMENT_NAME }}-${SHA_SHORT}" >> $GITHUB_OUTPUT
+
+      - name: Build y push de la imagen
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.tags.outputs.rolling }}
+            ${{ steps.tags.outputs.sha }}
+          build-args: |
+            AZURE_STORAGE_CONNECTION_STRING=${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Login a Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Configurar credencial de ghcr.io en Container App
+        run: |
+          az containerapp registry set \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --server ghcr.io \
+            --username ${{ github.actor }} \
+            --password ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Actualizar Container App con la nueva imagen
+        run: |
+          az containerapp update \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --image ${{ steps.tags.outputs.sha }} \
+            --set-env-vars \
+              ENVIRONMENT=${{ env.ENVIRONMENT_NAME }} \
+              AZURE_STORAGE_CONNECTION_STRING="secretref:storage-conn-str"
+
+      - name: Asegurar secret de Storage en el Container App
+        run: |
+          az containerapp secret set \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --secrets storage-conn-str="${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}"
+
+      - name: Mostrar URL del endpoint desplegado
+        run: |
+          FQDN=$(az containerapp show \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          echo "Endpoint desplegado: https://${FQDN}"
+          echo "Health check: https://${FQDN}/health"
+          echo "Documentación API: https://${FQDN}/docs"
