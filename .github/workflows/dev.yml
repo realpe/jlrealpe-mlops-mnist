@@ -94,6 +94,12 @@ jobs:
         uses: actions/checkout@v4
 
       # --- Build de la imagen Docker -------------------------------------
+      # Setup de Docker Buildx: requerido para que el cache (type=gha) funcione.
+      # Sin esto, el driver default de Docker no soporta exportar cache y
+      # el build falla con "Cache export is not supported for the docker driver".
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       # Login a ghcr.io con el token automático del workflow.
       # github.actor = usuario que disparó el run (en este caso: 'realpe').
       - name: Login a GitHub Container Registry (ghcr.io)
