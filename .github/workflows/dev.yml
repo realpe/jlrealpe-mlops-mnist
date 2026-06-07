@@ -151,6 +151,16 @@ jobs:
             --username ${{ github.actor }} \
             --password ${{ secrets.GITHUB_TOKEN }}
 
+      # Primero declaramos el secret en el Container App. Tiene que existir
+      # ANTES de que el siguiente step (update) lo referencie con 'secretref:',
+      # de lo contrario falla con ContainerAppSecretRefNotFound.
+      - name: Asegurar secret de Storage en el Container App
+        run: |
+          az containerapp secret set \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ secrets.RESOURCE_GROUP }} \
+            --secrets storage-conn-str="${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}"
+
       - name: Actualizar Container App con la nueva imagen
         run: |
           az containerapp update \
@@ -160,16 +170,6 @@ jobs:
             --set-env-vars \
               ENVIRONMENT=${{ env.ENVIRONMENT_NAME }} \
               AZURE_STORAGE_CONNECTION_STRING="secretref:storage-conn-str"
-
-      # Guardar la connection string del Storage como SECRET dentro del
-      # Container App (no como variable en texto plano). El --set-env-vars
-      # de arriba lo referencia con 'secretref:'.
-      - name: Asegurar secret de Storage en el Container App
-        run: |
-          az containerapp secret set \
-            --name ${{ env.CONTAINER_APP_NAME }} \
-            --resource-group ${{ secrets.RESOURCE_GROUP }} \
-            --secrets storage-conn-str="${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}"
 
       - name: Mostrar URL del endpoint desplegado
         run: |
