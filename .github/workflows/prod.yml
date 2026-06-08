@@ -114,14 +114,8 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Configurar credencial de ghcr.io en Container App
-        run: |
-          az containerapp registry set \
-            --name ${{ env.CONTAINER_APP_NAME }} \
-            --resource-group ${{ secrets.RESOURCE_GROUP }} \
-            --server ghcr.io \
-            --username ${{ github.actor }} \
-            --password ${{ secrets.GITHUB_TOKEN }}
+      # NOTA: NO configuramos credencial de ghcr.io en el Container App
+      # porque la imagen es PÚBLICA. Ver dev.yml para más contexto.
 
       # Primero declaramos el secret en el Container App. Tiene que existir
       # ANTES de que el siguiente step (update) lo referencie con 'secretref:'.

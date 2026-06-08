@@ -139,17 +139,11 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # Antes del primer deploy, Container Apps no sabe cómo autenticarse
-      # contra ghcr.io para pulear imágenes privadas. Configuramos el secret
-      # del registry idempotentemente (no falla si ya existe).
-      - name: Configurar credencial de ghcr.io en Container App
-        run: |
-          az containerapp registry set \
-            --name ${{ env.CONTAINER_APP_NAME }} \
-            --resource-group ${{ secrets.RESOURCE_GROUP }} \
-            --server ghcr.io \
-            --username ${{ github.actor }} \
-            --password ${{ secrets.GITHUB_TOKEN }}
+      # NOTA: NO configuramos credencial de ghcr.io en el Container App
+      # porque la imagen es PÚBLICA. Si fuera privada, habría que configurar
+      # un Personal Access Token (PAT) no efímero - el GITHUB_TOKEN del
+      # workflow expira al terminar el run y deja al Container App sin
+      # poder re-pullear la imagen en cold starts futuros.
 
       # Primero declaramos el secret en el Container App. Tiene que existir
       # ANTES de que el siguiente step (update) lo referencie con 'secretref:',
