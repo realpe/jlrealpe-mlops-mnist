@@ -1,16 +1,18 @@
 # =============================================================================
 # .gitignore
 # -----------------------------------------------------------------------------
-# CRITICO para este proyecto: el enunciado prohibe que el .onnx exista en el
-# repo. Este archivo garantiza que nunca se suba por accidente, junto con
-# secretos y artefactos temporales.
+# CRITICO para este proyecto: el enunciado prohibe que el .onnx y los datos
+# de prueba existan en el repo. Este archivo garantiza que nunca se suban
+# por accidente, junto con secretos y artefactos temporales.
 # =============================================================================
 
 # Modelos y datos descargados (NO deben ir al repo)
 *.onnx
+*.npz
 artifacts/
 data/
 models/
+test-download/
 
 # Secretos y variables de entorno locales
 .env
@@ -28,3 +30,6 @@ venv/
 .DS_Store
 .idea/
 .vscode/
+
+# Logs
+*.log

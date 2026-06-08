@@ -300,8 +300,8 @@ Si todavía no la hiciste, conviene configurar tu identidad y algunos
 comportamientos útiles:
 
 ```bash
-git config --global user.name "José Luis Realpe Manrique"
-git config --global user.email "94474911@u.icesi.edu.co"
+git config --global user.name "Tu Nombre Apellido"
+git config --global user.email "tu-email@dominio.com"
 
 # Que el editor por defecto sea VS Code (si lo usas)
 git config --global core.editor "code --wait"

@@ -1,18 +1,26 @@
 # =============================================================================
 # requirements.txt
 # -----------------------------------------------------------------------------
-# Dependencias de Python del proyecto. Se fijaran versiones exactas en el
-# siguiente paso (pinning) para que el build sea reproducible.
+# Dependencias de la aplicación, con versiones FIJAS (==) para garantizar
+# que el build sea reproducible. Si en el futuro hay que actualizar, se
+# hace deliberadamente y se prueba antes de mergear a prod.
 #
-# Previstas:
-#   fastapi              -> framework de la API
-#   uvicorn[standard]    -> servidor ASGI para correr FastAPI
-#   onnxruntime          -> motor de inferencia para el modelo .onnx
-#   numpy                -> manejo de tensores / preprocesamiento
-#   pillow               -> leer y redimensionar imagenes a 28x28
-#   azure-storage-blob   -> descargar modelo/datos y escribir predicciones
-#   python-multipart     -> recibir imagenes via POST en FastAPI
-#   pytest               -> correr las pruebas unitarias
+# Nota: scripts/prepare_test_data.py usa tensorflow, pero NO va aquí porque
+# solo se ejecuta una vez en local, no en el pipeline ni en runtime.
 # =============================================================================
 
-# TODO: fijar versiones en el siguiente paso del proyecto.
+# --- API web ---
+fastapi==0.115.0          # framework REST
+uvicorn[standard]==0.32.0 # servidor ASGI ('standard' incluye uvloop + httptools, más rápido)
+python-multipart==0.0.12  # FastAPI lo necesita para recibir uploads (POST con file)
+
+# --- Inferencia ---
+onnxruntime==1.20.1       # motor de inferencia para el modelo .onnx
+numpy==1.26.4             # tensores y operaciones (compatible con onnxruntime 1.20)
+pillow==11.0.0            # leer/redimensionar imágenes (PIL)
+
+# --- Integración con Azure ---
+azure-storage-blob==12.23.1  # descargar modelo del Blob (en build) y append a predicciones (runtime)
+
+# --- Pruebas (solo se usa en la etapa 'test' del pipeline) ---
+pytest==8.3.3
