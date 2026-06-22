@@ -202,7 +202,7 @@ async def health():
     if not state["ready"] or state["session"] is None:
         # 503 Service Unavailable: contenedor arrancando o roto.
         raise HTTPException(status_code=503, detail="Service not ready")
-    return {"status": "ok", "environment": ENVIRONMENT}
+    return {"status": "ok!", "environment": ENVIRONMENT}
 
 
 @app.post("/predict")
